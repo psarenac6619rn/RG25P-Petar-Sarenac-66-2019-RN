@@ -1,0 +1,5 @@
+#include "Particles.h"
+#include <cstdlib>
+Particles::Particles(int count){ps.resize(count);glGenVertexArrays(1,&vao);glGenBuffers(1,&vbo);glBindVertexArray(vao);glBindBuffer(GL_ARRAY_BUFFER,vbo);glBufferData(GL_ARRAY_BUFFER,count*sizeof(Vec3),nullptr,GL_DYNAMIC_DRAW);glEnableVertexAttribArray(0);glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(Vec3),(void*)0);}
+Particles::~Particles(){glDeleteBuffers(1,&vbo);glDeleteVertexArrays(1,&vao);}void Particles::update(float dt,Vec3 e){std::vector<Vec3>pts;pts.reserve(ps.size());for(auto&x:ps){x.life-=dt;if(x.life<=0){auto rf=[](){return (float)std::rand()/RAND_MAX;};x.p=e+Vec3{(rf()-.5f)*.18f,0,(rf()-.5f)*.18f};x.v={(rf()-.5f)*.25f,.8f+rf()*.8f,(rf()-.5f)*.25f};x.life=.5f+rf()*1.3f;}x.v.y+=.25f*dt;x.p=x.p+x.v*dt;pts.push_back(x.p);}glBindBuffer(GL_ARRAY_BUFFER,vbo);glBufferSubData(GL_ARRAY_BUFFER,0,pts.size()*sizeof(Vec3),pts.data());}
+void Particles::draw()const{glBindVertexArray(vao);glDrawArrays(GL_POINTS,0,(GLsizei)ps.size());glBindVertexArray(0);}
