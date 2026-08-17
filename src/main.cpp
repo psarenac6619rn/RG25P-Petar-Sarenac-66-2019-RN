@@ -11,89 +11,67 @@
 #include "SSAO.h"
 #include "Particles.h"
 #include "PostProcess.h"
-
 static const int W=1280,H=720; static Camera cam; static bool firstMouse=true;static double lastX=W/2,lastY=H/2;static bool mouseLocked=true;
 static void mouse(GLFWwindow*,double x,double y){if(!mouseLocked)return;if(firstMouse){lastX=x;lastY=y;firstMouse=false;}double dx=x-lastX,dy=lastY-y;lastX=x;lastY=y;cam.look((float)dx,(float)dy);}
 static GLuint proceduralNormal(){const int N=128;std::vector<unsigned char>p(N*N*3);for(int y=0;y<N;y++)for(int x=0;x<N;x++){float fx=x*.20f,fy=y*.20f;float nx=.5f+.18f*std::sin(fx)*std::cos(fy),ny=.5f+.18f*std::cos(fx*.7f+fy*.3f),nz=1;int k=(y*N+x)*3;p[k]=(unsigned char)(nx*255);p[k+1]=(unsigned char)(ny*255);p[k+2]=(unsigned char)(nz*255);}GLuint t;glGenTextures(1,&t);glBindTexture(GL_TEXTURE_2D,t);glTexImage2D(GL_TEXTURE_2D,0,GL_RGB8,N,N,0,GL_RGB,GL_UNSIGNED_BYTE,p.data());glGenerateMipmap(GL_TEXTURE_2D);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT);return t;}
 static void object(const Mesh&m,const Shader&s,const Mat4&model,Vec3 color,float normalMap){s.setMat4("model",model);s.setVec3("baseColor",color);s.setFloat("useNormalMap",normalMap);m.draw();}
-
-// Proceduralno drvo: nema OBJ modela. Trup, grane i krošnja su hijerarhijski
-// sastavljeni od transformisanih primitiva. U DMT modu grane lagano "dišu".
-static void drawEnergyTree(const Mesh& cube,const Shader& g,float t,bool dmt){
+static void drawEnergyTree(const Mesh& cube,const Shader& g,float t,bool bhc){
     const Vec3 trunkColor{.18f,.115f,.055f};
     const Vec3 branchColor{.16f,.095f,.045f};
     const Vec3 leafColor{.075f,.30f,.105f};
-
-    float breathe=dmt?(0.025f*std::sin(t*1.35f)):0.0f;
+    float breathe=bhc?(0.025f*std::sin(t*1.35f)):0.0f;
     Mat4 root=translate({0.0f,0.10f,-2.80f});
-
-    // Glavni trup: vise segmenata daju organsku siluetu.
     for(int i=0;i<5;i++){
         float y=.45f+i*.62f;
-        float sway=dmt?std::sin(t*.85f+i*.7f)*.035f:0.0f;
+        float sway=bhc?std::sin(t*.85f+i*.7f)*.035f:0.0f;
         Mat4 m=multiply(root,multiply(translate({sway,y,0}),multiply(rotateZ(sway*.8f),scale({.34f-i*.035f,.38f,.32f-i*.03f}))));
         object(cube,g,m,trunkColor,1);
     }
-
-    // Hijerarhijske grane u tri visinska nivoa.
     for(int level=0;level<3;level++){
         float y=2.15f+level*.52f;
         float len=1.10f-level*.10f;
         for(int b=0;b<8;b++){
             float ang=(float)b*PI_F/4.0f + level*.34f;
-            float wob=dmt?std::sin(t*.95f+b*1.7f+level)*.055f:0.0f;
+            float wob=bhc?std::sin(t*.95f+b*1.7f+level)*.055f:0.0f;
             Mat4 hub=multiply(root,translate({0,y,0}));
             Mat4 yaw=multiply(hub,rotateY(ang+wob));
             Mat4 tilt=multiply(yaw,rotateZ(.78f+breathe+wob*.25f));
             Mat4 branch=multiply(tilt,multiply(translate({0,len*.56f,0}),scale({.10f,len*.62f,.095f})));
             object(cube,g,branch,branchColor,1);
-
-            // Sekundarna račva.
             Mat4 tip=multiply(tilt,translate({0,len*1.06f,0}));
             float side=(b%2==0?1.0f:-1.0f);
             Mat4 twig=multiply(tip,multiply(rotateZ(side*(.48f+.08f*std::sin(t*.8f+b))),multiply(translate({0,.42f,0}),scale({.055f,.48f,.055f}))));
             object(cube,g,twig,branchColor,1);
-
-            // Stilizovana krošnja - svetleći "živi" čvorovi.
             Vec3 lc=leafColor;
-            if(dmt){
+            if(bhc){
                 lc={.08f+.05f*(.5f+.5f*std::sin(t+b)), .34f+.15f*(.5f+.5f*std::sin(t*1.2f+b)), .13f+.10f*(.5f+.5f*std::cos(t*.8f+b))};
             }
             Mat4 crown=multiply(tip,multiply(translate({0,.82f,0}),scale({.46f,.34f,.46f})));
             object(cube,g,crown,lc,1);
         }
     }
-
-    // Energetsko jezgro u stablu.
-    if(dmt){
+    if(bhc){
         float pulse=.18f+.045f*(.5f+.5f*std::sin(t*3.2f));
         Mat4 core=multiply(root,multiply(translate({0,1.85f,.02f}),scale({pulse,.42f,pulse})));
         object(cube,g,core,{.10f,.82f,.48f},0);
     }
 }
-
-
 static float terrainHeight(float,float){ return 0.0f; }
-
-// Procedural flower made only from transformed cubes: stem + radial petals + glowing core.
-static void drawFlower(const Mesh& cube,const Shader& g,Vec3 p,float t,bool dmt,float focus){
-    float pulse=dmt?(1.0f+0.10f*std::sin(t*2.5f+p.x)):1.0f;
+static void drawFlower(const Mesh& cube,const Shader& g,Vec3 p,float t,bool bhc,float focus){
+    float pulse=bhc?(1.0f+0.10f*std::sin(t*2.5f+p.x)):1.0f;
     Mat4 stem=multiply(translate({p.x,p.y+.25f,p.z}),scale({.035f,.25f,.035f}));
     object(cube,g,stem,{.045f,.22f,.07f},0);
     for(int i=0;i<8;i++){
         float a=i*(2.0f*PI_F/8.0f)+0.12f*std::sin(t*.9f+p.z);
         Mat4 petal=multiply(translate({p.x,p.y+.56f,p.z}),multiply(rotateY(a),multiply(rotateZ(.72f),multiply(translate({0,.16f,0}),scale({.085f,.22f,.035f})))));
-        Vec3 c=dmt?Vec3{.55f+.30f*std::sin(t*.7f+i),.08f+.10f*focus,.68f+.28f*std::cos(t*.9f+i)}:Vec3{.42f,.10f,.48f};
+        Vec3 c=bhc?Vec3{.55f+.30f*std::sin(t*.7f+i),.08f+.10f*focus,.68f+.28f*std::cos(t*.9f+i)}:Vec3{.42f,.10f,.48f};
         object(cube,g,petal,c*pulse,0);
     }
     float core=.10f+.035f*focus+.018f*std::sin(t*3.0f+p.x);
     Mat4 center=multiply(translate({p.x,p.y+.58f,p.z}),scale({core,core,core}));
-    object(cube,g,center,dmt?Vec3{1.0f,.40f+.50f*focus,.12f}:Vec3{.72f,.34f,.08f},0);
+    object(cube,g,center,bhc?Vec3{1.0f,.40f+.50f*focus,.12f}:Vec3{.72f,.34f,.08f},0);
 }
-
-
 enum class InteractType { Chair, Table, Tree, Pond, Lounger, Flower, Duck };
-
 struct Interactable {
     InteractType type;
     Vec3 pos;
@@ -101,22 +79,14 @@ struct Interactable {
     int index;
     const char* name;
 };
-
 static bool flowerPlacementAllowed(float x,float z){
-    // Pond + stone rim exclusion.
     float pdx=(x+4.25f)/2.75f;
     float pdz=(z+5.25f)/2.15f;
     if(pdx*pdx+pdz*pdz < 1.0f) return false;
-
-    // Table + chair exclusion.
     if(x>0.15f && x<2.75f && z>0.10f && z<3.20f) return false;
-
-    // Lounger exclusion.
     if(x>-2.60f && x<-0.65f && z>-7.10f && z<-4.30f) return false;
-
     return true;
 }
-
 static int nearestInteractable(const std::vector<Interactable>& items,const Vec3& player){
     int best=-1; float bestD=9999.0f;
     for(int i=0;i<(int)items.size();i++){
@@ -125,7 +95,6 @@ static int nearestInteractable(const std::vector<Interactable>& items,const Vec3
     }
     return best;
 }
-
 static std::vector<Vec3> makeFlowers(){
     std::vector<Vec3> f;
     const float candidates[][2]={
@@ -141,7 +110,6 @@ static std::vector<Vec3> makeFlowers(){
     }
     return f;
 }
-
 static void drawTableChair(const Mesh&c,const Shader&g){
  Vec3 w{.25f,.14f,.07f},m{.12f,.16f,.18f}; object(c,g,multiply(translate({1.45f,.78f,1.15f}),scale({1.05f,.10f,.70f})),w,1);
  for(float x:{.72f,2.18f})for(float z:{.70f,1.60f})object(c,g,multiply(translate({x,.39f,z}),scale({.07f,.39f,.07f})),m,0);
@@ -163,9 +131,7 @@ static void drawDuck(const Mesh&c,const Shader&g,float t){
  object(c,g,multiply(r,scale({.28f,.16f,.42f})),{.76f,.62f,.18f},0); object(c,g,multiply(r,multiply(translate({0,.23f,-.28f}),scale({.17f,.18f,.17f}))),{.84f,.70f,.22f},0);
  object(c,g,multiply(r,multiply(translate({0,.22f,-.48f}),scale({.08f,.045f,.16f}))),{.82f,.34f,.06f},0);
 }
-
-// Procedural physical body left behind when F3 enters Ghost Mode.
-static void drawGhostBody(const Mesh& cube,const Shader& g,Vec3 pos,float yaw,float t,bool dmt){
+static void drawGhostBody(const Mesh& cube,const Shader& g,Vec3 pos,float yaw,float t,bool bhc){
     Mat4 root=multiply(translate({pos.x,pos.y-0.78f,pos.z}),rotateY(-yaw*PI_F/180.0f));
     Vec3 dark{.055f,.075f,.095f}, mid{.075f,.105f,.135f}, skin{.42f,.31f,.24f};
     object(cube,g,multiply(root,multiply(translate({0,1.18f,0}),scale({.30f,.43f,.18f}))),dark,1);
@@ -179,11 +145,10 @@ static void drawGhostBody(const Mesh& cube,const Shader& g,Vec3 pos,float yaw,fl
         object(cube,g,multiply(root,multiply(translate({q*.15f,.05f,0}),scale({.12f,.32f,.13f}))),mid,1);
     }
     object(cube,g,multiply(root,multiply(translate({0,1.25f,.22f}),scale({.22f,.30f,.08f}))),mid,1);
-    float pulse=dmt?(.65f+.35f*std::sin(t*2.4f)):.55f;
+    float pulse=bhc?(.65f+.35f*std::sin(t*2.4f)):.55f;
     object(cube,g,multiply(root,multiply(translate({0,1.25f,.315f}),scale({.035f,.19f,.018f}))),
            {.04f*pulse,.55f*pulse,.95f*pulse},0);
 }
-
 int main(){
  if(!glfwInit()){std::cerr<<"GLFW init failed\n";return 1;}glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3);glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,3);glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE);
  GLFWwindow*win=glfwCreateWindow(W,H,"RAF RG - Sci-Fi Outpost",nullptr,nullptr);if(!win){glfwTerminate();return 1;}glfwMakeContextCurrent(win);glewExperimental=GL_TRUE;if(glewInit()!=GLEW_OK){std::cerr<<"GLEW init failed\n";return 1;}glGetError();glfwSwapInterval(1);glfwSetCursorPosCallback(win,mouse);glfwSetInputMode(win,GLFW_CURSOR,GLFW_CURSOR_DISABLED);glEnable(GL_DEPTH_TEST);
@@ -200,7 +165,7 @@ int main(){
   for(int i=0;i<(int)flowers.size();i++)
       interactables.push_back({InteractType::Flower,flowers[i]+Vec3{0,.55f,0},1.35f,i,"Flower"});
   g.use();g.setInt("normalMap",0);ss.use();ss.setInt("gPosition",0);ss.setInt("gNormal",1);ss.setInt("noiseTex",2);light.use();light.setInt("gPosition",0);light.setInt("gNormal",1);light.setInt("gAlbedo",2);light.setInt("ssaoTex",3);post.use();post.setInt("scene",0);
-  bool aoOn=true;int effect=1;bool dmtMode=false;bool launchMode=false;bool ghostMode=false;
+  bool aoOn=true;int effect=1;bool bhcMode=false;bool launchMode=false;bool ghostMode=false;
   bool key1=false,key2=false,keyF=false,keyF1=false,keyF2=false,keyF3=false,keyF4=false,keyE=false;
   float launchProgress=0.0f,focusStrength=0.0f;
   Vec3 launchStartPos{}; float launchStartYaw=0,launchStartPitch=0;
@@ -209,20 +174,17 @@ int main(){
   const Vec3 chairSeatPos{1.45f,1.18f,2.20f};
   int currentInteractable=-1;
   float interactionPulse=0.0f;
-  // Normal mode is grounded. Only F3 Ghost Mode allows free vertical flight.
   const float playerEyeHeight=1.72f;
   const float gravity=-18.0f;
   float verticalVelocity=0.0f;
   float last=(float)glfwGetTime();
-  std::cout<<"Controls: WASD move, mouse look, 1 SSAO, 2 post effect, F cursor, F1 DMT, F2 tunnel, F3 ghost flight, F4 materialize, ESC exit\n";
+  std::cout<<"Controls: WASD move, mouse look, 1 SSAO, 2 post effect, F cursor, F1 bhc, F2 tunnel, F3 ghost flight, F4 materialize, ESC exit\n";
   while(!glfwWindowShouldClose(win)){
    float now=(float)glfwGetTime(),dt=std::min(now-last,.05f);last=now;if(glfwGetKey(win,GLFW_KEY_ESCAPE)==GLFW_PRESS)glfwSetWindowShouldClose(win,1);
    float fw=(glfwGetKey(win,GLFW_KEY_W)==GLFW_PRESS)-(glfwGetKey(win,GLFW_KEY_S)==GLFW_PRESS);
    float rt=(glfwGetKey(win,GLFW_KEY_D)==GLFW_PRESS)-(glfwGetKey(win,GLFW_KEY_A)==GLFW_PRESS);
    if(!launchMode && !seated){
        if(ghostMode){
-           // Full 3D noclip movement. Unlike normal Camera::move(), forward keeps
-           // the vertical component of the camera direction.
            float up=(glfwGetKey(win,GLFW_KEY_SPACE)==GLFW_PRESS)-(glfwGetKey(win,GLFW_KEY_LEFT_CONTROL)==GLFW_PRESS);
            float boost=(glfwGetKey(win,GLFW_KEY_LEFT_SHIFT)==GLFW_PRESS)?2.4f:1.0f;
            Vec3 ghostForward=cam.front();
@@ -235,11 +197,6 @@ int main(){
            cam.move(fw,rt,dt);
        }
    }
-
-   // Grounding / gravity:
-   // - normal mode: camera behaves like a physical player and cannot remain in the air
-   // - ghost mode: no gravity, full 3D flight
-   // - launch mode: scripted F2 animation controls the camera, so gravity is temporarily suspended
    if(!ghostMode && !launchMode && !seated){
        float groundY=terrainHeight(cam.pos.x,cam.pos.z)+playerEyeHeight;
        if(cam.pos.y>groundY+0.002f){
@@ -256,14 +213,9 @@ int main(){
    }else if(ghostMode){
        verticalVelocity=0.0f;
    }
-
-   // Central interaction query. New phases only need a new InteractType
-   // and a switch branch instead of new scattered input checks.
    currentInteractable=nearestInteractable(interactables,cam.pos);
-
    Vec3 duckNow=duckPosition(now);
    bool duckNear=length(duckNow-cam.pos)<1.55f;
-
    bool ke=glfwGetKey(win,GLFW_KEY_E)==GLFW_PRESS;
    if(ke&&!keyE&&!ghostMode&&!launchMode){
        if(seated){
@@ -273,74 +225,60 @@ int main(){
            std::cout<<"Standing.\n";
        }else if(duckNear){
            interactionPulse=1.0f;
-           std::cout<<"Interaction: Duck - moving actor hook ready.\n";
+           std::cout<<"Interaction: Duck\n";
        }else if(currentInteractable>=0){
            const Interactable &it=interactables[currentInteractable];
            interactionPulse=1.0f;
-
            switch(it.type){
                case InteractType::Chair:
                    seatReturnPos=cam.pos; seatReturnYaw=cam.yaw; seatReturnPitch=cam.pitch;
                    seated=true; cam.pos=chairSeatPos; cam.yaw=-118.0f; cam.pitch=-4.0f;
                    std::cout<<"Interaction: Chair - seated. E to stand.\n";
                    break;
-
                case InteractType::Table:
-                   std::cout<<"Interaction: Table - future item/action hook ready.\n";
+                   std::cout<<"Interaction: Table\n";
                    break;
-
                case InteractType::Tree:
                    focusStrength=std::max(focusStrength,.72f);
-                   std::cout<<"Interaction: Energy Tree - focus response triggered.\n";
+                   std::cout<<"Interaction: Energy Tree\n";
                    break;
-
                case InteractType::Pond:
-                   std::cout<<"Interaction: Pond - future water action hook ready.\n";
+                   std::cout<<"Interaction: Pond\n";
                    break;
-
                case InteractType::Lounger:
-                   std::cout<<"Interaction: Lounger - future sit/lie hook ready.\n";
+                   std::cout<<"Interaction: Lounger\n";
                    break;
-
                case InteractType::Flower:
                    focusStrength=1.0f;
-                   std::cout<<"Interaction: Flower - fractal focus boosted.\n";
+                   std::cout<<"Interaction: Flower\n";
                    break;
-
                default: break;
            }
        }
    }
    keyE=ke;
    interactionPulse=std::max(0.0f,interactionPulse-dt*1.6f);
-
    bool k1=glfwGetKey(win,GLFW_KEY_1)==GLFW_PRESS;if(k1&&!key1)aoOn=!aoOn;key1=k1;bool k2=glfwGetKey(win,GLFW_KEY_2)==GLFW_PRESS;if(k2&&!key2)effect=(effect+1)%4;key2=k2;bool kf=glfwGetKey(win,GLFW_KEY_F)==GLFW_PRESS;if(kf&&!keyF){mouseLocked=!mouseLocked;firstMouse=true;glfwSetInputMode(win,GLFW_CURSOR,mouseLocked?GLFW_CURSOR_DISABLED:GLFW_CURSOR_NORMAL);}keyF=kf;
-   bool kf1=glfwGetKey(win,GLFW_KEY_F1)==GLFW_PRESS;if(kf1&&!keyF1){dmtMode=!dmtMode;std::cout<<"DMT Visual mode: "<<(dmtMode?"ON":"OFF")<<"\n";glfwSetWindowTitle(win,dmtMode?"RAF RG - Sci-Fi Outpost [DMT VISUAL]":"RAF RG - Sci-Fi Outpost");}keyF1=kf1;
+   bool kf1=glfwGetKey(win,GLFW_KEY_F1)==GLFW_PRESS;if(kf1&&!keyF1){bhcMode=!bhcMode;std::cout<<"Brain HyperConnectivity mode: "<<(bhcMode?"ON":"OFF")<<"\n";glfwSetWindowTitle(win,bhcMode?"RAF RG - Sci-Fi Outpost [Brain HyperConnectivity]":"RAF RG - Sci-Fi Outpost");}keyF1=kf1;
    bool kf2=glfwGetKey(win,GLFW_KEY_F2)==GLFW_PRESS;if(kf2&&!keyF2){
        launchMode=!launchMode;
-       if(launchMode){dmtMode=true;launchProgress=0.0f;launchStartPos=cam.pos;launchStartYaw=cam.yaw;launchStartPitch=cam.pitch;std::cout<<"Launch tunnel: ON\n";}
+       if(launchMode){bhcMode=true;launchProgress=0.0f;launchStartPos=cam.pos;launchStartYaw=cam.yaw;launchStartPitch=cam.pitch;std::cout<<"Launch tunnel: ON\n";}
        else {cam.pos=launchStartPos;cam.yaw=launchStartYaw;cam.pitch=launchStartPitch;launchProgress=0.0f;std::cout<<"Launch tunnel: OFF\n";}
    }keyF2=kf2;
-
-   // F3 = enter/leave ghost preview.
-   // First press stores the real position. Second press cancels and returns there.
    bool kf3=glfwGetKey(win,GLFW_KEY_F3)==GLFW_PRESS;
    if(kf3&&!keyF3){
        if(!ghostMode){
-           // Ghost and launch are intentionally exclusive. If F3 is pressed during
-           // the tunnel, cancel the launch first and return to its real start point.
            if(launchMode){
                cam.pos=launchStartPos; cam.yaw=launchStartYaw; cam.pitch=launchStartPitch;
                launchMode=false; launchProgress=0.0f;
            }
-           // The physical body is always grounded before the spirit leaves it.
            cam.pos.y=terrainHeight(cam.pos.x,cam.pos.z)+playerEyeHeight;
            verticalVelocity=0.0f;
            ghostReturnPos=cam.pos;
            ghostReturnYaw=cam.yaw;
            ghostReturnPitch=cam.pitch;
            ghostMode=true;
-           std::cout<<"Ghost mode: ON (F3 cancel/return, F4 commit new position)\n";
+           std::cout<<"Ghost mode: ON\n";
            glfwSetWindowTitle(win,"RAF RG - Sci-Fi Outpost [GHOST MODE]");
        }else{
            cam.pos=ghostReturnPos;
@@ -348,28 +286,22 @@ int main(){
            cam.pitch=ghostReturnPitch;
            verticalVelocity=0.0f;
            ghostMode=false;
-           std::cout<<"Ghost mode: CANCELLED - returned to original position\n";
-           glfwSetWindowTitle(win,dmtMode?"RAF RG - Sci-Fi Outpost [DMT VISUAL]":"RAF RG - Sci-Fi Outpost");
+           std::cout<<"Ghost mode: OFF\n";
+           glfwSetWindowTitle(win,bhcMode?"RAF RG - Sci-Fi Outpost [Brain HyperConnectivity]":"RAF RG - Sci-Fi Outpost");
        }
    }
    keyF3=kf3;
-
-   // F4 only has a meaning while ghost mode is active: keep current ghost position
-   // as the new real player/camera position and leave ghost mode.
    bool kf4=glfwGetKey(win,GLFW_KEY_F4)==GLFW_PRESS;
    if(kf4&&!keyF4&&ghostMode){
        ghostMode=false;
-       // F4 materializes the body at the ghost location. If that point is in the air,
-       // gravity immediately takes over and the body falls until it reaches terrain.
        verticalVelocity=0.0f;
        ghostReturnPos=cam.pos;
        ghostReturnYaw=cam.yaw;
        ghostReturnPitch=cam.pitch;
-       std::cout<<"Ghost position COMMITTED - this is now the new player position\n";
-       glfwSetWindowTitle(win,dmtMode?"RAF RG - Sci-Fi Outpost [DMT VISUAL]":"RAF RG - Sci-Fi Outpost");
+       std::cout<<"Ghost position: Saved\n";
+       glfwSetWindowTitle(win,bhcMode?"RAF RG - Sci-Fi Outpost [Brain HyperConnectivity]":"RAF RG - Sci-Fi Outpost");
    }
    keyF4=kf4;
-
    if(launchMode){
        launchProgress=std::min(1.0f,launchProgress+dt/10.0f);
        float ease=launchProgress*launchProgress*(3.0f-2.0f*launchProgress);
@@ -377,10 +309,8 @@ int main(){
        cam.yaw=launchStartYaw+std::sin(now*.8f)*2.2f*(1.0f-ease);
        cam.pos=launchStartPos+Vec3{std::sin(now*.65f)*.12f*ease,7.5f*ease,-1.4f*ease};
    }
-
-   // Flower gaze detector. Looking closely at a flower in DMT mode increases focus smoothly.
    float bestFlowerDot=-1.0f;
-   if(dmtMode && !launchMode){
+   if(bhcMode && !launchMode){
        Vec3 cf=cam.front();
        for(const Vec3& fp:flowers){
            Vec3 target=fp+Vec3{0,.58f,0}; Vec3 to=target-cam.pos; float dist=length(to);
@@ -391,45 +321,38 @@ int main(){
    focusStrength += (focusTarget-focusStrength)*std::min(1.0f,dt*4.2f);
    float fov=60.0f-30.0f*focusStrength;
    Mat4 V=cam.view(),P=perspective(radians(fov),W/(float)H,.1f,100);
-   // 1) Geometry pass -> position/normal/albedo-specular G-buffer
-   gb.bind();glViewport(0,0,W,H);glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);g.use();g.setMat4("view",V);g.setMat4("projection",P);g.setFloat("time",now);g.setInt("dmtMode",dmtMode?1:0);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,nmap);
-   object(terrain,g,identity(),{.075f,.13f,.12f},1); drawTableChair(cube,g); drawPondAndLounger(cube,g,now,dmtMode); drawDuck(cube,g,now);
-   // Centralno drvo koje u DMT modu vizuelno prikuplja energiju sa neba.
-   drawEnergyTree(cube,g,now,dmtMode);
+   gb.bind();glViewport(0,0,W,H);glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);g.use();g.setMat4("view",V);g.setMat4("projection",P);g.setFloat("time",now);g.setInt("bhcMode",bhcMode?1:0);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,nmap);
+   object(terrain,g,identity(),{.075f,.13f,.12f},1); drawTableChair(cube,g); drawPondAndLounger(cube,g,now,bhcMode); drawDuck(cube,g,now);
+   drawEnergyTree(cube,g,now,bhcMode);
    if(ghostMode){
        Vec3 groundedBody=ghostReturnPos;
        groundedBody.y=terrainHeight(groundedBody.x,groundedBody.z)+playerEyeHeight;
-       drawGhostBody(cube,g,groundedBody,ghostReturnYaw,now,dmtMode);
+       drawGhostBody(cube,g,groundedBody,ghostReturnYaw,now,bhcMode);
    }
-   for(const Vec3& fp:flowers) drawFlower(cube,g,fp,now,dmtMode,focusStrength);
-   // Hierarchical drone: propeller transforms are relative to animated body transform.
+   for(const Vec3& fp:flowers) drawFlower(cube,g,fp,now,bhcMode,focusStrength);
    Mat4 droneRoot=multiply(translate({std::sin(now*.55f)*3.2f,2.7f+std::sin(now*1.7f)*.18f,-1.5f+std::cos(now*.55f)*2.0f}),rotateY(now*.55f+.6f));
    object(cube,g,multiply(droneRoot,scale({.65f,.18f,.45f})),{.32f,.36f,.40f},1);
    Vec3 arms[4]={{.72f,0,.52f},{-.72f,0,.52f},{.72f,0,-.52f},{-.72f,0,-.52f}};for(auto a:arms){Mat4 arm=multiply(droneRoot,translate(a));object(cube,g,multiply(arm,scale({.28f,.06f,.05f})),{.18f,.21f,.24f},0);Mat4 rotor=multiply(arm,rotateY(now*14));object(cube,g,multiply(rotor,scale({.42f,.025f,.045f})),{.05f,.7f,.85f},0);}
    Vec3 emitterWorld=transformPoint(droneRoot,{0,-.25f,0});
-   // 2) SSAO pass
    glBindFramebuffer(GL_FRAMEBUFFER,ao.fbo);glClear(GL_COLOR_BUFFER_BIT);ss.use();ss.setMat4("projection",P);ss.setVec3("samples[0]",ao.kernel[0]);for(int i=0;i<32;i++){std::string n="samples["+std::to_string(i)+"]";ss.setVec3(n.c_str(),ao.kernel[i]);}GLint ns=glGetUniformLocation(ss.id,"noiseScale");glUniform2f(ns,W/4.0f,H/4.0f);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,gb.position);glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,gb.normal);glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D,ao.noise);quad.draw();
-   // 3) Deferred lighting into first post-process target
-   pp.bind();glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);glDisable(GL_DEPTH_TEST);light.use();light.setFloat("time",now);light.setInt("dmtMode",dmtMode?1:0);light.setFloat("focusStrength",focusStrength);light.setFloat("launchProgress",launchMode?launchProgress:0.0f);Vec3 worldLights[4]={{0,5,2},{-6,2,-4},{6,2,-4},emitterWorld};Vec3 cols[4]={{1.3f,.55f,.25f},{.1f,.55f,1.2f},{.7f,.2f,1.2f},{.1f,1.0f,1.4f}};for(int i=0;i<4;i++){std::string ln="lights["+std::to_string(i)+"]",cn="lightColors["+std::to_string(i)+"]";light.setVec3(ln.c_str(),transformPoint(V,worldLights[i]));light.setVec3(cn.c_str(),cols[i]);}light.setInt("ssaoEnabled",aoOn?1:0);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,gb.position);glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,gb.normal);glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D,gb.albedo);glActiveTexture(GL_TEXTURE3);glBindTexture(GL_TEXTURE_2D,ao.texture);quad.draw();
-   // Copy geometry depth so particles intersect scene correctly.
+   pp.bind();glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);glDisable(GL_DEPTH_TEST);light.use();light.setFloat("time",now);light.setInt("bhcMode",bhcMode?1:0);light.setFloat("focusStrength",focusStrength);light.setFloat("launchProgress",launchMode?launchProgress:0.0f);Vec3 worldLights[4]={{0,5,2},{-6,2,-4},{6,2,-4},emitterWorld};Vec3 cols[4]={{1.3f,.55f,.25f},{.1f,.55f,1.2f},{.7f,.2f,1.2f},{.1f,1.0f,1.4f}};for(int i=0;i<4;i++){std::string ln="lights["+std::to_string(i)+"]",cn="lightColors["+std::to_string(i)+"]";light.setVec3(ln.c_str(),transformPoint(V,worldLights[i]));light.setVec3(cn.c_str(),cols[i]);}light.setInt("ssaoEnabled",aoOn?1:0);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,gb.position);glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,gb.normal);glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D,gb.albedo);glActiveTexture(GL_TEXTURE3);glBindTexture(GL_TEXTURE_2D,ao.texture);quad.draw();
    glBindFramebuffer(GL_READ_FRAMEBUFFER,gb.fbo);glBindFramebuffer(GL_DRAW_FRAMEBUFFER,pp.fbo);glBlitFramebuffer(0,0,W,H,0,0,W,H,GL_DEPTH_BUFFER_BIT,GL_NEAREST);
    glBindFramebuffer(GL_FRAMEBUFFER,pp.fbo);glEnable(GL_DEPTH_TEST);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE);particles.update(dt,emitterWorld);part.use();part.setMat4("view",V);part.setMat4("projection",P);particles.draw();
-   if(dmtMode){
-       // Cestice se dizu iz energetskog jezgra drveta ka fraktalnom zenitu.
+   if(bhcMode){
        treeEnergy.update(dt,{0.0f,1.75f,-2.80f});
        treeEnergy.draw();
    }
    if(launchMode){
-       // Dense particle fog around the viewer during F2 launch.
        Vec3 fogEmitter=cam.pos+cam.front()*1.2f+Vec3{0,-.65f,0};
        launchMist.update(dt,fogEmitter);launchMist.draw();
    }
    glDisable(GL_BLEND);
-   // 4) Flexible final post-processing pass. Effect 0=none,1=HDR tone map,2=gray,3=invert.
-   glBindFramebuffer(GL_FRAMEBUFFER,0);glDisable(GL_DEPTH_TEST);glClear(GL_COLOR_BUFFER_BIT);post.use();post.setInt("effect",effect);post.setInt("dmtMode",dmtMode?1:0);post.setInt("launchMode",launchMode?1:0);post.setFloat("launchProgress",launchProgress);post.setFloat("focusStrength",focusStrength);post.setFloat("time",now);GLint rloc=glGetUniformLocation(post.id,"resolution");glUniform2f(rloc,(float)W,(float)H);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,pp.color);quad.draw();glEnable(GL_DEPTH_TEST);
+   glBindFramebuffer(GL_FRAMEBUFFER,0);glDisable(GL_DEPTH_TEST);glClear(GL_COLOR_BUFFER_BIT);post.use();post.setInt("effect",effect);post.setInt("bhcMode",bhcMode?1:0);post.setInt("launchMode",launchMode?1:0);post.setFloat("launchProgress",launchProgress);post.setFloat("focusStrength",focusStrength);post.setFloat("time",now);GLint rloc=glGetUniformLocation(post.id,"resolution");glUniform2f(rloc,(float)W,(float)H);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,pp.color);quad.draw();glEnable(GL_DEPTH_TEST);
    glfwSwapBuffers(win);glfwPollEvents();
   }
   glDeleteTextures(1,&nmap);
  }catch(const std::exception&e){std::cerr<<"ERROR: "<<e.what()<<"\n";glfwDestroyWindow(win);glfwTerminate();return 2;}
  glfwDestroyWindow(win);glfwTerminate();return 0;
 }
+
+

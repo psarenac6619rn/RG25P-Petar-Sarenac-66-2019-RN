@@ -17,3 +17,4 @@ public:
     void setVec3(const char*n,Vec3 v)const;
     void setMat4(const char*n,const Mat4& m)const;
 };
+

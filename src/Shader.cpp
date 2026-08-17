@@ -11,3 +11,4 @@ void Shader::setInt(const char*n,int v)const{ glUniform1i(glGetUniformLocation(i
 void Shader::setFloat(const char*n,float v)const{ glUniform1f(glGetUniformLocation(id,n),v); }
 void Shader::setVec3(const char*n,Vec3 v)const{ glUniform3f(glGetUniformLocation(id,n),v.x,v.y,v.z); }
 void Shader::setMat4(const char*n,const Mat4&m)const{ glUniformMatrix4fv(glGetUniformLocation(id,n),1,GL_FALSE,m.m); }
+

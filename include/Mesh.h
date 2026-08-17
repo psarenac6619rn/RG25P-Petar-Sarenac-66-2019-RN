@@ -12,3 +12,4 @@ public:
     static Mesh cube(); static Mesh plane(int resolution,float size); static Mesh quad();
     void draw()const;
 };
+

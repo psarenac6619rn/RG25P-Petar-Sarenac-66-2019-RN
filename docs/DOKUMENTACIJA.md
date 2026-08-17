@@ -57,18 +57,18 @@ Ako projekat rade dva studenta, pre predaje zameniti ovaj deo stvarnom podelom, 
 Treba znati objasniti zašto se koristi G-buffer, šta znači view-space, kako se SSAO kernel formira, zašto noise tekstura smanjuje vidljive šablone, šta znači životni vek čestice, kako radi parent-child transformacija, zašto se blending koristi za čestice i zašto se post-processing radi fullscreen quad-om.
 
 
-## Proceduralno nebo i DMT Visual mode
+## Proceduralno nebo i Brain HyperConnectivity mode
 
 Pozadina scene je proceduralno generisana u `lighting.frag`. Kada G-buffer nema geometriju, shader prikazuje nocni gradijent, proceduralne zvezde, maglicu i svetlosni izvor. Za nebo nisu potrebne spoljne teksture.
 
-Taster `F1` ukljucuje/iskljucuje DMT Visual mode. Efekat je podeljen na dva nivoa:
+Taster `F1` ukljucuje/iskljucuje Brain HyperConnectivity mode. Efekat je podeljen na dva nivoa:
 - `gbuffer.vert` blago deformise verteks pozicije sinusnim talasima, zbog cega objekti i teren deluju kao da "disu" i plivaju;
 - `post.frag` pomera UV koordinate celog kadra, dodaje talase, blagu radialnu distorziju, chromatic aberration, hue shift i pulsiranje intenziteta boja.
 
 Ovaj rezim je namerno implementiran shaderima tako da se moze ukljuciti u realnom vremenu bez menjanja scene ili ponovnog ucitavanja resursa.
 
 
-## DMT Energy Tree proširenje
+## Brain HyperConnectivity Energy Tree proširenje
 F1 režim dodatno demonstrira proceduralnu grafiku kroz mrežu sazvežđa, polarno/kaleidoskopski
 generisanu fraktalnu mandalu na zenitu i centralno proceduralno drvo. Drvo je hijerarhija
 transformisanih primitiva, bez OBJ modela. Njegove grane dobijaju vremenski zavisno njihanje,
@@ -78,12 +78,12 @@ generiše svetleće "žilice" na zelenim/braon materijalima drveta.
 
 ## F2 Launch/Tunnel i proceduralno cveće
 
-Launch režim je vremenski kontrolisana sekvenca povezana sa postojećim DMT post-processing pipeline-om.
+Launch režim je vremenski kontrolisana sekvenca povezana sa postojećim bhc post-processing pipeline-om.
 `launchProgress` se povećava od 0 do 1 i kontroliše fog fazu, pomeranje/orijentaciju kamere,
 radijalne tunelske prstenove, speed-line efekat, kaleidoskopske fractal rosette i intenzitet
 zenitnog izvora. F2 ponovo prekida sekvencu i vraća sačuvanu poziciju/orijentaciju kamere.
 
-Cveće je proceduralna hijerarhijska geometrija iz primitiva. U DMT režimu aplikacija računa
+Cveće je proceduralna hijerarhijska geometrija iz primitiva. U bhc režimu aplikacija računa
 dot-product između `Camera::front()` i normalizovanog pravca ka svakom cvetu. Kada je cvet
 dovoljno blizu centra pogleda, `focusStrength` se glatko povećava. On istovremeno kontroliše
 FOV zoom, emissive/fractal odgovor latica i dodatne rosette u završnom post-processing prolazu.
@@ -107,3 +107,4 @@ Normalna kamera koristi `terrainHeight(x,z)` kao visinu kolizione aproksimacije 
 konstantu `playerEyeHeight` za visinu očiju. Vertikalna brzina se integriše sa gravitacionim
 ubrzanjem dok kamera ne stigne do tla. U F3 režimu se ovaj sistem suspenduje i dozvoljava
 se puni 3D noclip. F4 izlazi iz ghost režima, nakon čega gravitacija ponovo postaje aktivna.
+

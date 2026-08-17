@@ -20,3 +20,4 @@ Mesh Mesh::cube(){
     for(auto&f:fs){unsigned b=(unsigned)v.size();v.push_back({P[f.a],f.n,{0,0}});v.push_back({P[f.b],f.n,{1,0}});v.push_back({P[f.c],f.n,{1,1}});v.push_back({P[f.d],f.n,{0,1}});i.insert(i.end(),{b,b+1,b+2,b,b+2,b+3});}return Mesh(v,i);
 }
 Mesh Mesh::plane(int r,float s){std::vector<Vertex>v;std::vector<unsigned>i;for(int z=0;z<=r;z++)for(int x=0;x<=r;x++){float u=(float)x/r,w=(float)z/r;float px=(u-.5f)*s,pz=(w-.5f)*s;float y=0.18f*std::sin(px*.65f)*std::cos(pz*.52f)+0.05f*std::sin((px+pz)*1.4f);v.push_back({{px,y,pz},{0,1,0},{u*8,w*8}});}for(int z=0;z<r;z++)for(int x=0;x<r;x++){unsigned a=z*(r+1)+x,b=a+1,c=a+(r+1),d=c+1;i.insert(i.end(),{a,c,b,b,c,d});}return Mesh(v,i);}
+

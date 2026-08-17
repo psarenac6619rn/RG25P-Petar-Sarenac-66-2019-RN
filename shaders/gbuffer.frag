@@ -6,5 +6,6 @@ void main(){
  vec3 n=normalize(ViewNormal); vec3 mapN=texture(normalMap,UV).xyz*2.0-1.0;
  n=normalize(mix(n, normalize(n + vec3(mapN.x,0.0,mapN.y)*0.38), useNormalMap));
  gPosition=ViewPos; gNormal=n; float grid=smoothstep(.46,.5,abs(fract(UV.x)-.5))+smoothstep(.46,.5,abs(fract(UV.y)-.5));
- gAlbedo=vec4(baseColor*(0.82+0.18*grid),0.42); // alpha is material specular strength
+ gAlbedo=vec4(baseColor*(0.82+0.18*grid),0.42); 
 }
+
