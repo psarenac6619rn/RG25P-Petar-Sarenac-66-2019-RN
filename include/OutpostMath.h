@@ -31,6 +31,17 @@ inline Mat4 rotateZ(float a){ Mat4 r=identity(); float c=std::cos(a),s=std::sin(
 inline Mat4 perspective(float fovy,float aspect,float n,float f){
     Mat4 r{}; float q=1.0f/std::tan(fovy/2.0f); r.m[0]=q/aspect;r.m[5]=q;r.m[10]=(f+n)/(n-f);r.m[11]=-1;r.m[14]=(2*f*n)/(n-f);return r;
 }
+inline Mat4 orthographic(float left, float right, float bottom, float top, float zNear, float zFar) {
+    Mat4 r{};
+    r.m[0] = 2.0f / (right - left);
+    r.m[5] = 2.0f / (top - bottom);
+    r.m[10] = -2.0f / (zFar - zNear);
+    r.m[12] = -(right + left) / (right - left);
+    r.m[13] = -(top + bottom) / (top - bottom);
+    r.m[14] = -(zFar + zNear) / (zFar - zNear);
+    r.m[15] = 1.0f;
+    return r;
+}
 inline Mat4 lookAt(Vec3 eye,Vec3 center,Vec3 up){
     Vec3 f=normalize(center-eye), s=normalize(cross(f,up)), u=cross(s,f);
     Mat4 r=identity();

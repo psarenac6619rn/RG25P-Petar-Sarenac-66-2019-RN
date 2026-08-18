@@ -11,8 +11,11 @@
 #include "SSAO.h"
 #include "Particles.h"
 #include "PostProcess.h"
+#include "GUI.h"
 static const int W=1280,H=720; static Camera cam; static bool firstMouse=true;static double lastX=W/2,lastY=H/2;static bool mouseLocked=true;
 static void mouse(GLFWwindow*,double x,double y){if(!mouseLocked)return;if(firstMouse){lastX=x;lastY=y;firstMouse=false;}double dx=x-lastX,dy=lastY-y;lastX=x;lastY=y;cam.look((float)dx,(float)dy);}
+static GUI* pGui=nullptr;
+static void resizeCB(GLFWwindow* win, int w, int h) { glViewport(0,0,w,h); if(pGui) pGui->resize(w,h); }
 static GLuint proceduralNormal(){const int N=128;std::vector<unsigned char>p(N*N*3);for(int y=0;y<N;y++)for(int x=0;x<N;x++){float fx=x*.20f,fy=y*.20f;float nx=.5f+.18f*std::sin(fx)*std::cos(fy),ny=.5f+.18f*std::cos(fx*.7f+fy*.3f),nz=1;int k=(y*N+x)*3;p[k]=(unsigned char)(nx*255);p[k+1]=(unsigned char)(ny*255);p[k+2]=(unsigned char)(nz*255);}GLuint t;glGenTextures(1,&t);glBindTexture(GL_TEXTURE_2D,t);glTexImage2D(GL_TEXTURE_2D,0,GL_RGB8,N,N,0,GL_RGB,GL_UNSIGNED_BYTE,p.data());glGenerateMipmap(GL_TEXTURE_2D);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT);return t;}
 static void object(const Mesh&m,const Shader&s,const Mat4&model,Vec3 color,float normalMap){s.setMat4("model",model);s.setVec3("baseColor",color);s.setFloat("useNormalMap",normalMap);m.draw();}
 static void drawEnergyTree(const Mesh& cube,const Shader& g,float t,bool bhc){
@@ -149,12 +152,13 @@ static void drawGhostBody(const Mesh& cube,const Shader& g,Vec3 pos,float yaw,fl
     object(cube,g,multiply(root,multiply(translate({0,1.25f,.315f}),scale({.035f,.19f,.018f}))),
            {.04f*pulse,.55f*pulse,.95f*pulse},0);
 }
-int main(){
+ int main(){
  if(!glfwInit()){std::cerr<<"GLFW init failed\n";return 1;}glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3);glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,3);glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE);
- GLFWwindow*win=glfwCreateWindow(W,H,"RAF RG - Sci-Fi Outpost",nullptr,nullptr);if(!win){glfwTerminate();return 1;}glfwMakeContextCurrent(win);glewExperimental=GL_TRUE;if(glewInit()!=GLEW_OK){std::cerr<<"GLEW init failed\n";return 1;}glGetError();glfwSwapInterval(1);glfwSetCursorPosCallback(win,mouse);glfwSetInputMode(win,GLFW_CURSOR,GLFW_CURSOR_DISABLED);glEnable(GL_DEPTH_TEST);
+ GLFWwindow*win=glfwCreateWindow(W,H,"RAF RG - Sci-Fi Outpost",nullptr,nullptr);if(!win){glfwTerminate();return 1;}glfwMakeContextCurrent(win);glewExperimental=GL_TRUE;if(glewInit()!=GLEW_OK){std::cerr<<"GLEW init failed\n";return 1;}glGetError();glfwSwapInterval(1);glfwSetCursorPosCallback(win,mouse);glfwSetFramebufferSizeCallback(win,resizeCB);glfwSetInputMode(win,GLFW_CURSOR,GLFW_CURSOR_DISABLED);glEnable(GL_DEPTH_TEST);
  try{
   Shader g("shaders/gbuffer.vert","shaders/gbuffer.frag"),ss("shaders/fullscreen.vert","shaders/ssao.frag"),light("shaders/fullscreen.vert","shaders/lighting.frag"),part("shaders/particle.vert","shaders/particle.frag"),post("shaders/fullscreen.vert","shaders/post.frag");
   Mesh terrain=Mesh::plane(96,28),cube=Mesh::cube(),quad=Mesh::quad();GBuffer gb(W,H);SSAO ao(W,H);PostProcess pp(W,H);Particles particles(220),treeEnergy(420),launchMist(520);GLuint nmap=proceduralNormal();
+  GUI gui(W,H); pGui=&gui;
   std::vector<Vec3> flowers=makeFlowers();
   std::vector<Interactable> interactables;
   interactables.push_back({InteractType::Chair,{1.45f,.55f,2.38f},2.0f,-1,"Chair"});
@@ -347,7 +351,32 @@ int main(){
        launchMist.update(dt,fogEmitter);launchMist.draw();
    }
    glDisable(GL_BLEND);
-   glBindFramebuffer(GL_FRAMEBUFFER,0);glDisable(GL_DEPTH_TEST);glClear(GL_COLOR_BUFFER_BIT);post.use();post.setInt("effect",effect);post.setInt("bhcMode",bhcMode?1:0);post.setInt("launchMode",launchMode?1:0);post.setFloat("launchProgress",launchProgress);post.setFloat("focusStrength",focusStrength);post.setFloat("time",now);GLint rloc=glGetUniformLocation(post.id,"resolution");glUniform2f(rloc,(float)W,(float)H);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,pp.color);quad.draw();glEnable(GL_DEPTH_TEST);
+   glBindFramebuffer(GL_FRAMEBUFFER,0);glDisable(GL_DEPTH_TEST);glClear(GL_COLOR_BUFFER_BIT);post.use();post.setInt("effect",effect);post.setInt("bhcMode",bhcMode?1:0);post.setInt("launchMode",launchMode?1:0);post.setFloat("launchProgress",launchProgress);post.setFloat("focusStrength",focusStrength);post.setFloat("time",now);GLint rloc=glGetUniformLocation(post.id,"resolution");int fbw,fbh;glfwGetFramebufferSize(win,&fbw,&fbh);glUniform2f(rloc,(float)fbw,(float)fbh);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,pp.color);quad.draw();glEnable(GL_DEPTH_TEST);
+   
+   // Draw GUI on top
+   gui.begin();
+   gui.drawCrosshair();
+   if (!ghostMode && !launchMode && currentInteractable >= 0) {
+       const Interactable& it = interactables[currentInteractable];
+       std::string text = std::string("[E] Interact: ") + it.name;
+       float scale = 2.0f;
+       float textW = text.length() * 8.0f * scale;
+       gui.drawText(text, fbw/2.0f - textW/2.0f, fbh/2.0f + 20.0f, scale, {1.0f, 0.8f, 0.2f});
+   }
+   if (ghostMode) {
+       std::string text = "GHOST MODE ACTIVE [F4 to Materialize]";
+       float scale = 1.5f;
+       float textW = text.length() * 8.0f * scale;
+       gui.drawText(text, fbw/2.0f - textW/2.0f, 20.0f, scale, {0.3f, 0.8f, 1.0f});
+   }
+   if (seated) {
+       std::string text = "[E] Stand up";
+       float scale = 1.5f;
+       float textW = text.length() * 8.0f * scale;
+       gui.drawText(text, fbw/2.0f - textW/2.0f, fbh - 40.0f, scale, {1.0f, 1.0f, 1.0f});
+   }
+   gui.end();
+
    glfwSwapBuffers(win);glfwPollEvents();
   }
   glDeleteTextures(1,&nmap);
