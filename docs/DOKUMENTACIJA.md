@@ -1,110 +1,206 @@
 # Dokumentacija — Sci-Fi Outpost
 
+**Student:** Petar Šarenac | **Indeks:** 66/2019 | **Predmet:** Računarska grafika (RG25P)
+
+---
+
 ## 1. Ideja aplikacije
-Sci-Fi Outpost je mala interaktivna 3D scena noćne/svemirske stanice. Korisnik se slobodno kreće kroz scenu FPS kamerom. Centralni animirani objekat je dron sa četiri rotora, a ispod drona se nalazi emiter čestica.
+
+Za projekat sam napravio malu interaktivnu 3D scenu koja prikazuje noćnu svemirsku stanicu. Ideja mi je bila da igrač može slobodno da se kreće kroz scenu FPS kamerom i da istražuje okruženje. Centralni animirani objekat je dron sa četiri rotora koji kruži iznad scene, a ispod njega sam postavio emiter čestica koji vizuelno dočarava propulziju.
+
+Scena sadrži više elemenata: proceduralno stablo energije, ribnjak sa patkom koja kruži, sto sa stolicom i novinama, cveće po terenu i nekoliko post-processing efekata koji dramatično menjaju izgled.
+
+---
 
 ## 2. Generalna 3D grafika
-Scena koristi perspektivnu kameru, dubinski test, više transformacija i više dinamičkih izvora svetla. Teren se proceduralno generiše kao mreža trouglova čija se visina računa kombinacijom sinusnih funkcija. Time geometrija nije učitana iz OBJ fajla.
 
-Materijal terena i objekata koristi proceduralno generisanu normal mapu. Normal mapa nastaje u CPU kodu pri pokretanju programa i šalje se kao OpenGL tekstura shaderu, pa projekat koristi i teksturu koja nije albedo/colour tekstura.
+Koristim perspektivnu kameru, dubinski test, više matričnih transformacija i više dinamičkih izvora svetlosti. Teren sam proceduralno generisao kao mrežu trouglova, pri čemu se visina svake tačke računa kombinacijom sinusnih funkcija:
+
+```
+y = 0.18*sin(px*0.65)*cos(pz*0.52) + 0.05*sin((px+pz)*1.4)
+```
+
+Na ovaj način geometrija terena nije učitana iz eksternog OBJ fajla, već nastaje matematički pri pokretanju programa.
+
+Za materijale sam koristio proceduralno generisanu normal mapu. Ona nastaje u CPU kodu pri inicijalizaciji i šalje se kao OpenGL tekstura shaderu. Ovim sam ispunio uslov da projekat koristi teksturu koja nije klasična albedo/color tekstura.
+
+---
 
 ## 3. Hijerarhija i animacija
-Dron ima roditeljsku transformaciju `droneRoot`. Telo, nosači i rotori računaju svoje transformacije u odnosu na roditeljsku transformaciju. Promena položaja/orijentacije drona zato automatski pomera svu decu. Svaki rotor dodatno dobija sopstvenu brzu rotaciju oko Y ose.
+
+Dron ima roditeljsku transformaciju `droneRoot` koja se računa svaki frejm na osnovu trigonometrijskih funkcija. Telo drona, nosači i rotori računaju svoje transformacije **relativno u odnosu na `droneRoot`**, pa pomeranje roditeljske transformacije automatski pomera celu hijerarhiju. Svaki rotor dodatno ima sopstvenu brzu rotaciju oko Y ose (`rotateY(now*14)`).
+
+Energetsko stablo je takođe hijerarhijska struktura — deblo, grane, listovi i "jezgro" se crtaju redom, a svaki nivo grana ima ugao koji zavisi od globalnog vremena.
+
+---
 
 ## 4. Tehnika 1 — Deferred Shading
-Prvi prolaz renderuje geometriju u G-buffer sa tri render mete:
-- view-space position
-- view-space normal
-- albedo + specular faktor
 
-Drugi lighting prolaz je fullscreen pass. On čita G-buffer i računa osvetljenje za četiri point light izvora. Prednost ovog pristupa je da se geometrija ne renderuje ponovo za svaki izvor svetla.
+Implementirao sam **Deferred Rendering** u dva prolaza.
 
-Relevantni fajlovi: `GBuffer.cpp`, `gbuffer.vert`, `gbuffer.frag`, `lighting.frag`.
+**Geometry pass** renderuje celu scenu u G-buffer koji se sastoji od tri teksture:
+- `gPosition` — pozicija fragmenta u view prostoru (RGB16F)
+- `gNormal` — normala fragmenta u view prostoru (RGB16F)
+- `gAlbedo` — boja objekta + speculat faktor u alpha kanalu (RGBA16F)
 
-## 5. Tehnika 2 — SSAO
-SSAO koristi 32 nasumična uzorka u hemisferi i 4x4 noise teksturu. Za svaki fragment uzorci se rotiraju TBN bazom formiranom iz normale i noise vektora, projektuju nazad u screen-space i porede sa dubinom iz G-buffera. Dobijeni faktor ambijentalne okluzije utiče na ambient komponentu u deferred lighting prolazu.
+**Lighting pass** je fullscreen prolaz koji čita G-buffer i računa Blinn-Phong osvetljenje za četiri tačkasta izvora svetlosti. Prednost ovakvog pristupa je da se geometrija prolazi samo jednom, a osvetljenje se računa u jednom fullscreen prolasku bez obzira na broj svetala.
 
-Taster `1` demonstrira razliku sa i bez SSAO-a.
+Relevantni fajlovi: `GBuffer.cpp`, `GBuffer.h`, `gbuffer.vert`, `gbuffer.frag`, `lighting.frag`.
 
-Relevantni fajlovi: `SSAO.cpp`, `ssao.frag`.
+---
 
-## 6. Tehnika 3 — Animated Particle System
-Particle sistem održava niz čestica sa položajem, brzinom i vremenom života. Kada čestica istekne, ponovo se emituje ispod drona. Čestice se ažuriraju svakog frejma na CPU-u i renderuju kao `GL_POINTS` sa aditivnim blendingom.
+## 5. Tehnika 2 — SSAO (Screen-Space Ambient Occlusion)
 
-Emiter prati dron pomoću hijerarhijske transformacije, tako da je sistem vezan za animirani objekat.
+SSAO simulira senčenje u udubinama i uglovima — mjestima gde svetlost teže dopire.
 
-Relevantni fajlovi: `Particles.cpp`, `particle.vert`, `particle.frag`.
+Implementirao sam ga sa **32 nasumična uzorka** u hemisferi i **4×4 noise teksturom**. Za svaki fragment:
+1. Formiram TBN bazu iz normale fragmenta i nasumičnog noise vektora
+2. Transformišem kernel uzorke u view prostor
+3. Projicujem svaki uzorak u screen-space i čitam dubinu iz G-buffer-a
+4. Ako je uzorak "ispred" površine — to je okluzija
+5. Prosečujem 32 rezultata u vrednost [0, 1]
+
+Noise tekstura rotira kernel po ekranu i na taj način smanjuje vidljive šablone koji bi nastali od malog broja uzoraka.
+
+Taster `1` u toku rada uključuje/isključuje SSAO, pa se vidi direktna razlika u kvalitetu senčenja.
+
+Relevantni fajlovi: `SSAO.cpp`, `SSAO.h`, `ssao.frag`.
+
+---
+
+## 6. Tehnika 3 — Animirani sistem čestica
+
+Sistem čestica održava niz `Particle` struktura od kojih svaka ima poziciju, brzinu i vreme života. Svaki frejm:
+1. Svakoj čestici se smanjuje `life` za `dt`
+2. Ako je `life <= 0`, čestica se respawn-uje oko emitera sa nasumičnom pozicijom i brzinom
+3. Primenjujem blagu anti-gravitacionu silu (čestica lagano lebdi nagore)
+4. Pozicija se integruje: `pos += velocity * dt`
+
+Čestice se renderuju kao `GL_POINTS` sa aditivnim blendingom — tako se efektno sabiru tamo gde se preklapaju. Emiter čestica ispod drona prati dron pomoću hijerarhijske transformacije.
+
+Koristim tri instance sistema:
+- **dron emiter** (220 čestica) — uvek aktivan
+- **treeEnergy** (420 čestica) — aktivno samo u BHC modu
+- **launchMist** (520 čestica) — aktivno tokom launch sekvence
+
+Relevantni fajlovi: `Particles.cpp`, `Particles.h`, `particle.vert`, `particle.frag`.
+
+---
 
 ## 7. Post-processing pipeline
-Lighting rezultat se prvo renderuje u `PostProcess` framebuffer umesto direktno na ekran. Poslednji fullscreen pass zatim čita tu teksturu i primenjuje izabrani efekat. Ovakva struktura odvaja renderovanje scene od screen-space obrade i lako se proširuje dodatnim efektima/među-framebufferima.
 
-Implementirani režimi su:
-- bez efekta
-- HDR exponential tone mapping + gamma correction
-- grayscale
-- invert
+Lighting rezultat renderujem u `PostProcess` framebuffer umesto direktno na ekran. Poslednji fullscreen prolaz čita tu teksturu i primenjuje izabrani efekat. Ovakva arhitektura odvaja renderovanje scene od obrade slike i lako se proširuje novim efektima.
 
-Taster `2` menja efekat tokom rada.
+Implementirani režimi (prebacivanje tasterom `2`):
+- `0` — bez efekta (sirovi HDR izlaz)
+- `1` — HDR exponential tone mapping + gamma korekcija (2.2)
+- `2` — Grayscale (luminance formula)
+- `3` — Invertovane boje
 
-Relevantni fajlovi: `PostProcess.cpp`, `post.frag`.
+Relevantni fajlovi: `PostProcess.cpp`, `PostProcess.h`, `post.frag`.
 
-## 8. Podela rada
-Ako projekat radi jedan student: sve stavke navesti uz svoje ime i indeks.
+---
 
-Ako projekat rade dva studenta, pre predaje zameniti ovaj deo stvarnom podelom, npr. Student A — Deferred Shading + scena; Student B — SSAO + particle sistem; zajednički — post-processing, testiranje i dokumentacija. Commit istorija mora odgovarati stvarnom radu.
+## 8. Proceduralno nebo i Brain HyperConnectivity mod
 
-## 9. Moguća pitanja na odbrani
-Treba znati objasniti zašto se koristi G-buffer, šta znači view-space, kako se SSAO kernel formira, zašto noise tekstura smanjuje vidljive šablone, šta znači životni vek čestice, kako radi parent-child transformacija, zašto se blending koristi za čestice i zašto se post-processing radi fullscreen quad-om.
+Pozadina scene je u potpunosti proceduralna — renderujem je direktno u `lighting.frag`. Kada G-buffer nema geometriju na nekom fragmentu (normala ≈ 0), shader prikazuje noćni gradijent neba, proceduralne zvezde sa treperenjem, konstelacionu mrežu linija i svetlosni glow. Nisu korišćene nikakve spoljne sky teksture.
 
+Taster **F1** uključuje Brain HyperConnectivity (BHC) mod koji menja vizuelni doživljaj na svim nivoima pipeline-a:
+- `gbuffer.vert` — deformiše verteks pozicije sinusnim talasima, objekti "dišu"
+- `lighting.frag` — psihedelična paleta boja, žile svetlosti na stablu, cvetni glow, aurora na nebu, fraktalna mandala na zenitu
+- `post.frag` — talasanje UV koordinata, blaga radijalna distorzija, chromatic aberration, hue shift, vinjeta
 
-## Proceduralno nebo i Brain HyperConnectivity mode
+BHC efekat je implementiran isključivo u shaderima, pa se može uključiti u realnom vremenu bez menjanja scene.
 
-Pozadina scene je proceduralno generisana u `lighting.frag`. Kada G-buffer nema geometriju, shader prikazuje nocni gradijent, proceduralne zvezde, maglicu i svetlosni izvor. Za nebo nisu potrebne spoljne teksture.
+---
 
-Taster `F1` ukljucuje/iskljucuje Brain HyperConnectivity mode. Efekat je podeljen na dva nivoa:
-- `gbuffer.vert` blago deformise verteks pozicije sinusnim talasima, zbog cega objekti i teren deluju kao da "disu" i plivaju;
-- `post.frag` pomera UV koordinate celog kadra, dodaje talase, blagu radialnu distorziju, chromatic aberration, hue shift i pulsiranje intenziteta boja.
+## 9. Energy Tree i BHC proširenje
 
-Ovaj rezim je namerno implementiran shaderima tako da se moze ukljuciti u realnom vremenu bez menjanja scene ili ponovnog ucitavanja resursa.
+U BHC modu aktivira se proceduralno energetsko stablo na koordinatama `{0, 0, -2.80}`. Stablo je hijerarhija transformisanih kocki — deblo u 5 segmenata, zatim tri nivoa grana sa po 8 grana po nivou, i listovi na vrhovima. Sve grane dobijaju vremenski zavisno njihanje.
 
+U BHC modu lighting shader generiše svetleće "žilice" na zelenim/braon materijalima stabla, a poseban particle emiter (420 čestica) prenosi energiju vizuelno od stabla ka nebu. Jezgro stabla pulsiše zelenim svetlom.
 
-## Brain HyperConnectivity Energy Tree proširenje
-F1 režim dodatno demonstrira proceduralnu grafiku kroz mrežu sazvežđa, polarno/kaleidoskopski
-generisanu fraktalnu mandalu na zenitu i centralno proceduralno drvo. Drvo je hijerarhija
-transformisanih primitiva, bez OBJ modela. Njegove grane dobijaju vremenski zavisno njihanje,
-a zaseban particle emitter vizuelno prenosi energiju od drveta ka nebu. Lighting shader
-generiše svetleće "žilice" na zelenim/braon materijalima drveta.
+Na nebu se pojavljuju:
+- Mreža linija između zvezda (proceduralne konstelacije)
+- Fraktalna mandala sa prstenovima, zracima i rekurzivnim fraktalima
+- Aurora borealis efekat
+- Centralna os svetlosti
 
+---
 
-## F2 Launch/Tunnel i proceduralno cveće
+## 10. F2 Launch sekvenca i proceduralno cveće
 
-Launch režim je vremenski kontrolisana sekvenca povezana sa postojećim bhc post-processing pipeline-om.
-`launchProgress` se povećava od 0 do 1 i kontroliše fog fazu, pomeranje/orijentaciju kamere,
-radijalne tunelske prstenove, speed-line efekat, kaleidoskopske fractal rosette i intenzitet
-zenitnog izvora. F2 ponovo prekida sekvencu i vraća sačuvanu poziciju/orijentaciju kamere.
+Launch mod (taster **F2**) je vremenski kontrolisana sekvenca. Varijabla `launchProgress` raste od 0 do 1 tokom 10 sekundi i kontroliše:
+- Kretanje i nagib kamere prema gore
+- Fog fazu (magla na početku)
+- Radijalne tunelske prstenove i speed-line efekat u `post.frag`
+- Kaleidoskopske fraktalne rozete
+- Intenzitet zenitnog izvora svetlosti
 
-Cveće je proceduralna hijerarhijska geometrija iz primitiva. U bhc režimu aplikacija računa
-dot-product između `Camera::front()` i normalizovanog pravca ka svakom cvetu. Kada je cvet
-dovoljno blizu centra pogleda, `focusStrength` se glatko povećava. On istovremeno kontroliše
-FOV zoom, emissive/fractal odgovor latica i dodatne rosette u završnom post-processing prolazu.
+Cveće je proceduralna hijerarhijska geometrija (stablo + latice + centar). U BHC modu računam `dot(Camera::front(), pravac_ka_cvetu)` za svaki cvet. Kad je cvet dovoljno blizu centra pogleda, `focusStrength` se glatko povećava i kontroliše istovremeno:
+- FOV zoom (od 60° do 30°)
+- Emisivni/fraktalni odgovor latica u lighting shaderu
+- Dodatne fraktalne rozete u post-processing prolazu
 
+---
 
-## Ghost / noclip sistem (F3 + F4)
+## 11. Ghost / noclip sistem (F3 + F4)
 
-F3 aktivira privremeni 3D „ghost“ režim. Pri ulasku se čuvaju `Camera::pos`, `yaw` i
-`pitch`. U ovom režimu se više ne koristi standardno horizontalno `Camera::move()`
-kretanje, već se pozicija direktno integriše iz punog `Camera::front()` vektora,
-desnog vektora i globalnog Y vektora, pa je moguće prolaziti i vertikalno kroz scenu.
+Taster **F3** aktivira "ghost" mod u kome igrač može da leti slobodno kroz scenu. Pri aktivaciji čuvam tekuće `Camera::pos`, `yaw` i `pitch`. U ghost modu koristim puni `Camera::front()` vektor za integrisanje pozicije (umesto horizontalnog kretanja), pa je moguće prolaziti i vertikalno.
 
-Ponovni F3 vraća zapamćenu poziciju/orijentaciju, čime ghost služi kao bezbedan preview.
-F4 umesto toga potvrđuje trenutnu ghost transformaciju i ona postaje nova stvarna
-pozicija kamere/igrača.
+Na mestu gde je ghost mod aktiviran ostaje vidljivo 3D telo igrača (`drawGhostBody`) — hijerarhijska figura iz kocki.
 
+Ponovni **F3** vraća zapamćenu poziciju i orijentaciju. **F4** potvrđuje trenutnu ghost poziciju i ona postaje nova stvarna pozicija igrača.
 
-## Gravitacija / terrain grounding
+---
 
-Normalna kamera koristi `terrainHeight(x,z)` kao visinu kolizione aproksimacije tla i
-konstantu `playerEyeHeight` za visinu očiju. Vertikalna brzina se integriše sa gravitacionim
-ubrzanjem dok kamera ne stigne do tla. U F3 režimu se ovaj sistem suspenduje i dozvoljava
-se puni 3D noclip. F4 izlazi iz ghost režima, nakon čega gravitacija ponovo postaje aktivna.
+## 12. Gravitacija i terrain grounding
 
+Kamera koristi funkciju `terrainHeight(x, z)` kao aproksimaciju kolizije s tlom, zajedno sa konstantom `playerEyeHeight = 1.72f`. Vertikalna brzina se integriše sa gravitacionim ubrzanjem `g = -18 m/s²` dok kamera ne dosegne visinu tla. U ghost modu ovaj sistem se suspenduje.
+
+---
+
+## 13. Sedenje i interaktivni meni iz novina
+
+Na sceni se nalazi stolica pored stola. Pritiskom **E** u blizini stolice kamera se teleportuje na poziciju `{1.45, 1.18, 2.20}` i igrač sedi. Novo **E** vraća igrača na prethodnu poziciju.
+
+Na stolu se nalaze novine — 3D objekat od dve stranice sa blagom animacijom lepršanja. Pritiskom **E** pored novina otvara se interaktivni meni u stilu novina koji prikazuje:
+- **[R]** — Reset igre (vraća kameru na početak, gasi sve modove)
+- **[ESC]** — Izlaz iz igre
+
+Dok je meni otvoren kursor postaje slobodan (nije zaključan).
+
+---
+
+## 14. Kontrole
+
+| Taster | Akcija |
+|---|---|
+| W/A/S/D | Kretanje |
+| Miš | Okretanje pogleda |
+| E | Interakcija sa objektom |
+| F | Toggle slobodan/zaključan miš |
+| 1 | Toggle SSAO |
+| 2 | Ciklus post-processing efekata |
+| F1 | Toggle Brain HyperConnectivity mod |
+| F2 | Toggle Launch sekvenca |
+| F3 | Toggle Ghost (noclip) mod |
+| F4 | Materijalizacija na ghost poziciji |
+| Space / Ctrl | Let gore / dole (Ghost mod) |
+| Shift | Turbo brzina (Ghost mod) |
+| R | Reset igre (u meniju novina) |
+| ESC | Izlaz |
+
+---
+
+## 15. Pitanja na odbrani
+
+Trebalo bi biti spreman da objasnim:
+- Zašto koristim G-buffer i u čemu je prednost deferred u odnosu na forward renderovanje
+- Šta znači view-space i zašto SSAO radi u view-space-u
+- Kako se formira SSAO kernel i zašto noise tekstura smanjuje vidljive šablone
+- Šta znači životni vek čestice i kako funkcioniše respawn mehanizam
+- Kako funkcioniše parent-child transformacija kod drona
+- Zašto se koristi aditivni blending za čestice
+- Zašto se post-processing radi fullscreen quadom
+- Kako proceduralna normal mapa utiče na vizuelni rezultat bez dodavanja novih poligona
