@@ -170,6 +170,9 @@ void GUI::begin() {
     Mat4 ortho = orthographic(0.0f, (float)W, (float)H, 0.0f, -1.0f, 1.0f);
     shader->setMat4("projection", ortho);
     shader->setMat4("model", identity());
+    // Default alpha
+    GLint alphaLoc = glGetUniformLocation(shader->id, "colorAlpha");
+    glUniform1f(alphaLoc, 1.0f);
 }
 
 void GUI::end() {
@@ -248,4 +251,28 @@ void GUI::drawText(const std::string& text, float x, float y, float scale, Vec3 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float), vertices.data());
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(vertices.size() / 4));
+}
+
+void GUI::drawRect(float x, float y, float w, float h, Vec3 color, float alpha) {
+    shader->setVec3("textColor", color);
+    shader->setInt("hasTex", 0);
+    GLint alphaLoc = glGetUniformLocation(shader->id, "colorAlpha");
+    glUniform1f(alphaLoc, alpha);
+
+    float vertices[] = {
+        x,     y,     0.f, 0.f,
+        x + w, y,     0.f, 0.f,
+        x + w, y + h, 0.f, 0.f,
+        x + w, y + h, 0.f, 0.f,
+        x,     y + h, 0.f, 0.f,
+        x,     y,     0.f, 0.f,
+    };
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // Restore alpha
+    glUniform1f(alphaLoc, 1.0f);
 }

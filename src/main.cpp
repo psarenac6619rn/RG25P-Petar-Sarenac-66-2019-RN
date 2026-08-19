@@ -74,7 +74,7 @@ static void drawFlower(const Mesh& cube,const Shader& g,Vec3 p,float t,bool bhc,
     Mat4 center=multiply(translate({p.x,p.y+.58f,p.z}),scale({core,core,core}));
     object(cube,g,center,bhc?Vec3{1.0f,.40f+.50f*focus,.12f}:Vec3{.72f,.34f,.08f},0);
 }
-enum class InteractType { Chair, Table, Tree, Pond, Lounger, Flower, Duck };
+enum class InteractType { Chair, Table, Tree, Pond, Newspaper, Flower, Duck };
 struct Interactable {
     InteractType type;
     Vec3 pos;
@@ -113,18 +113,36 @@ static std::vector<Vec3> makeFlowers(){
     }
     return f;
 }
-static void drawTableChair(const Mesh&c,const Shader&g){
+static void drawTableChairNewspaper(const Mesh&c,const Shader&g,float t){
  Vec3 w{.25f,.14f,.07f},m{.12f,.16f,.18f}; object(c,g,multiply(translate({1.45f,.78f,1.15f}),scale({1.05f,.10f,.70f})),w,1);
  for(float x:{.72f,2.18f})for(float z:{.70f,1.60f})object(c,g,multiply(translate({x,.39f,z}),scale({.07f,.39f,.07f})),m,0);
  object(c,g,multiply(translate({1.45f,.45f,2.38f}),scale({.42f,.08f,.42f})),w,1);
  object(c,g,multiply(translate({1.45f,.92f,2.76f}),scale({.42f,.48f,.08f})),w,1);
+ // Newspaper on table: two folded halves
+ Vec3 npaper{.88f,.82f,.04f}; // beige/newsprint
+ Vec3 nline{.20f,.15f,.10f}; // dark print lines
+ float fold=0.18f*std::sin(t*0.22f)+0.05f; // gentle page flutter
+ // Left half
+ Mat4 nleft=multiply(translate({1.25f,.835f,1.10f}),multiply(rotateY(.12f),multiply(rotateZ(-fold),scale({.20f,.008f,.28f}))));
+ object(c,g,nleft,npaper,0);
+ // Right half (slightly raised — open)
+ Mat4 nright=multiply(translate({1.65f,.840f,1.10f}),multiply(rotateY(.12f),multiply(rotateZ(fold),scale({.20f,.008f,.28f}))));
+ object(c,g,nright,npaper,0);
+ // Spine crease
+ Mat4 nspine=multiply(translate({1.45f,.838f,1.10f}),multiply(rotateY(.12f),scale({.025f,.012f,.28f})));
+ object(c,g,nspine,nline,0);
+ // A couple of "print" decorative strips on left page
+ for(int row=0;row<3;row++){
+ float rz=1.10f-0.07f+row*0.06f;
+ Mat4 strip=multiply(translate({1.22f+0.03f*std::sin(t*.3f+row),.843f,rz}),multiply(rotateY(.12f),scale({.14f,.003f,.015f})));
+ object(c,g,strip,nline,0);
+ }
 }
-static void drawPondAndLounger(const Mesh&c,const Shader&g,float t,bool d){
+
+static void drawPond(const Mesh&c,const Shader&g,float t,bool d){
  Vec3 pc{-4.25f,.05f,-5.25f}; for(int z=-2;z<=2;z++)for(int x=-3;x<=3;x++){float nx=x/3.f,nz=z/2.f;if(nx*nx+nz*nz>1.08f)continue;
  Vec3 wc=d?Vec3{.045f,.30f,.42f}:Vec3{.035f,.18f,.25f}; object(c,g,multiply(translate({pc.x+x*.48f,pc.y+.018f*std::sin(t*1.8f+x+z),pc.z+z*.48f}),scale({.27f,.025f,.27f})),wc,0);}
  for(int i=0;i<24;i++){float q=i*2*PI_F/24;object(c,g,multiply(translate({pc.x+2.05f*std::cos(q),.16f,pc.z+1.48f*std::sin(q)}),multiply(rotateY(-q),scale({.24f,.16f,.16f}))),{.24f,.20f,.17f},1);}
- Mat4 lr=multiply(translate({-1.65f,.24f,-5.65f}),rotateY(-.25f)); object(c,g,multiply(lr,scale({.58f,.09f,1.15f})),{.18f,.22f,.22f},1);
- object(c,g,multiply(lr,multiply(translate({0,.55f,-.82f}),multiply(rotateZ(-.35f),scale({.58f,.62f,.08f})))),{.22f,.27f,.27f},1);
 }
 static Vec3 duckPosition(float t){
  return {-4.25f+1.10f*std::cos(t*.42f),.25f,-5.25f+.68f*std::sin(t*.42f)};
@@ -163,9 +181,9 @@ static void drawGhostBody(const Mesh& cube,const Shader& g,Vec3 pos,float yaw,fl
   std::vector<Interactable> interactables;
   interactables.push_back({InteractType::Chair,{1.45f,.55f,2.38f},2.0f,-1,"Chair"});
   interactables.push_back({InteractType::Table,{1.45f,.75f,1.15f},1.9f,-1,"Table"});
+  interactables.push_back({InteractType::Newspaper,{1.45f,.88f,1.10f},1.6f,-1,"Newspaper"});
   interactables.push_back({InteractType::Tree,{0.0f,1.0f,-2.80f},2.2f,-1,"Energy Tree"});
   interactables.push_back({InteractType::Pond,{-4.25f,.10f,-5.25f},2.8f,-1,"Pond"});
-  interactables.push_back({InteractType::Lounger,{-1.65f,.35f,-5.65f},1.8f,-1,"Lounger"});
   for(int i=0;i<(int)flowers.size();i++)
       interactables.push_back({InteractType::Flower,flowers[i]+Vec3{0,.55f,0},1.35f,i,"Flower"});
   g.use();g.setInt("normalMap",0);ss.use();ss.setInt("gPosition",0);ss.setInt("gNormal",1);ss.setInt("noiseTex",2);light.use();light.setInt("gPosition",0);light.setInt("gNormal",1);light.setInt("gAlbedo",2);light.setInt("ssaoTex",3);post.use();post.setInt("scene",0);
@@ -175,6 +193,7 @@ static void drawGhostBody(const Mesh& cube,const Shader& g,Vec3 pos,float yaw,fl
   Vec3 launchStartPos{}; float launchStartYaw=0,launchStartPitch=0;
   Vec3 ghostReturnPos{}; float ghostReturnYaw=0,ghostReturnPitch=0;
   bool seated=false; Vec3 seatReturnPos{}; float seatReturnYaw=0,seatReturnPitch=0;
+  bool newspaperMenu=false; int newspaperSelected=0; bool keyR=false;
   const Vec3 chairSeatPos{1.45f,1.18f,2.20f};
   int currentInteractable=-1;
   float interactionPulse=0.0f;
@@ -249,8 +268,10 @@ static void drawGhostBody(const Mesh& cube,const Shader& g,Vec3 pos,float yaw,fl
                case InteractType::Pond:
                    std::cout<<"Interaction: Pond\n";
                    break;
-               case InteractType::Lounger:
-                   std::cout<<"Interaction: Lounger\n";
+               case InteractType::Newspaper:
+                   newspaperMenu=!newspaperMenu;
+                   if(newspaperMenu){ glfwSetInputMode(win,GLFW_CURSOR,GLFW_CURSOR_NORMAL); mouseLocked=false; firstMouse=true; std::cout<<"Newspaper menu opened.\n"; }
+                   else             { glfwSetInputMode(win,GLFW_CURSOR,GLFW_CURSOR_DISABLED); mouseLocked=true; firstMouse=true; std::cout<<"Newspaper menu closed.\n"; }
                    break;
                case InteractType::Flower:
                    focusStrength=1.0f;
@@ -262,6 +283,23 @@ static void drawGhostBody(const Mesh& cube,const Shader& g,Vec3 pos,float yaw,fl
    }
    keyE=ke;
    interactionPulse=std::max(0.0f,interactionPulse-dt*1.6f);
+   // ---- Newspaper menu keyboard handling ----
+   if(newspaperMenu){
+       bool kr=glfwGetKey(win,GLFW_KEY_R)==GLFW_PRESS;
+       if(kr&&!keyR){
+           // Reset: restore camera to start position
+           newspaperMenu=false;
+           seated=false;
+           cam.pos={0.0f,1.72f,4.5f}; cam.yaw=-90.0f; cam.pitch=0.0f;
+           bhcMode=false; launchMode=false; ghostMode=false;
+           launchProgress=0.0f; focusStrength=0.0f;
+           glfwSetWindowTitle(win,"RAF RG - Sci-Fi Outpost");
+           std::cout<<"Game Reset.\n";
+       }
+       keyR=kr;
+       // ESC to exit from newspaper menu handled below
+       if(glfwGetKey(win,GLFW_KEY_ESCAPE)==GLFW_PRESS) glfwSetWindowShouldClose(win,1);
+   }
    bool k1=glfwGetKey(win,GLFW_KEY_1)==GLFW_PRESS;if(k1&&!key1)aoOn=!aoOn;key1=k1;bool k2=glfwGetKey(win,GLFW_KEY_2)==GLFW_PRESS;if(k2&&!key2)effect=(effect+1)%4;key2=k2;bool kf=glfwGetKey(win,GLFW_KEY_F)==GLFW_PRESS;if(kf&&!keyF){mouseLocked=!mouseLocked;firstMouse=true;glfwSetInputMode(win,GLFW_CURSOR,mouseLocked?GLFW_CURSOR_DISABLED:GLFW_CURSOR_NORMAL);}keyF=kf;
    bool kf1=glfwGetKey(win,GLFW_KEY_F1)==GLFW_PRESS;if(kf1&&!keyF1){bhcMode=!bhcMode;std::cout<<"Brain HyperConnectivity mode: "<<(bhcMode?"ON":"OFF")<<"\n";glfwSetWindowTitle(win,bhcMode?"RAF RG - Sci-Fi Outpost [Brain HyperConnectivity]":"RAF RG - Sci-Fi Outpost");}keyF1=kf1;
    bool kf2=glfwGetKey(win,GLFW_KEY_F2)==GLFW_PRESS;if(kf2&&!keyF2){
@@ -326,7 +364,7 @@ static void drawGhostBody(const Mesh& cube,const Shader& g,Vec3 pos,float yaw,fl
    float fov=60.0f-30.0f*focusStrength;
    Mat4 V=cam.view(),P=perspective(radians(fov),W/(float)H,.1f,100);
    gb.bind();glViewport(0,0,W,H);glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);g.use();g.setMat4("view",V);g.setMat4("projection",P);g.setFloat("time",now);g.setInt("bhcMode",bhcMode?1:0);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,nmap);
-   object(terrain,g,identity(),{.075f,.13f,.12f},1); drawTableChair(cube,g); drawPondAndLounger(cube,g,now,bhcMode); drawDuck(cube,g,now);
+   object(terrain,g,identity(),{.075f,.13f,.12f},1); drawTableChairNewspaper(cube,g,now); drawPond(cube,g,now,bhcMode); drawDuck(cube,g,now);
    drawEnergyTree(cube,g,now,bhcMode);
    if(ghostMode){
        Vec3 groundedBody=ghostReturnPos;
@@ -374,6 +412,44 @@ static void drawGhostBody(const Mesh& cube,const Shader& g,Vec3 pos,float yaw,fl
        float scale = 1.5f;
        float textW = text.length() * 8.0f * scale;
        gui.drawText(text, fbw/2.0f - textW/2.0f, fbh - 40.0f, scale, {1.0f, 1.0f, 1.0f});
+   }
+   // ---- Newspaper menu overlay ----
+   if(newspaperMenu){
+       // Dark overlay
+       gui.drawRect(0,0,(float)fbw,(float)fbh,{0.06f,0.04f,0.02f},0.88f);
+       // Newspaper page background
+       float pw=680.f, ph=460.f;
+       float px=(fbw-pw)*0.5f, py=(fbh-ph)*0.5f;
+       gui.drawRect(px,py,pw,ph,{0.91f,0.87f,0.76f},1.0f);
+       // Newspaper header bar
+       gui.drawRect(px+8,py+8,pw-16,36,{0.12f,0.08f,0.04f},1.0f);
+       // Left column divider
+       gui.drawRect(px+pw*0.5f-2,py+52,4,ph-64,{0.30f,0.22f,0.14f},0.6f);
+       // Header text
+       gui.drawText("OUTPOST GAZETTE", px+14, py+14, 2.8f, {0.91f,0.87f,0.76f});
+       // Subtitle
+       gui.drawText("RAF RG Special Edition", px+14, py+52, 1.3f, {0.25f,0.18f,0.10f});
+       // Decorative rule
+       gui.drawRect(px+8,py+72,pw-16,2,{0.30f,0.22f,0.14f},0.8f);
+       // Left column: RESET option
+       gui.drawRect(px+pw*0.5f/2.f-120,py+102,240,44,{0.20f,0.14f,0.08f},0.18f);
+       gui.drawText("[R] Restart Game", px+pw*0.25f-120, py+114, 1.8f, {0.10f,0.07f,0.03f});
+       // Decorative filler lines (simulate news text)
+       for(int row=0;row<8;row++){
+           float lw=(row%3==2)?120.f:180.f;
+           gui.drawRect(px+30,py+160+row*24,lw,6,{0.55f,0.44f,0.32f},0.55f);
+       }
+       // Right column: EXIT option
+       gui.drawRect(px+pw*0.5f+pw*0.25f-120,py+102,240,44,{0.55f,0.08f,0.06f},0.25f);
+       gui.drawText("[ESC] Quit Game", px+pw*0.5f+pw*0.25f-118, py+114, 1.8f, {0.55f,0.08f,0.06f});
+       // Filler lines right column
+       for(int row=0;row<8;row++){
+           float lw=(row%2==1)?140.f:170.f;
+           gui.drawRect(px+pw*0.5f+30,py+160+row*24,lw,6,{0.55f,0.44f,0.32f},0.55f);
+       }
+       // Footer
+       gui.drawRect(px+8,py+ph-26,pw-16,2,{0.30f,0.22f,0.14f},0.8f);
+       gui.drawText("Press [R] to restart or [ESC] to exit", px+14, py+ph-22, 1.2f, {0.35f,0.25f,0.15f});
    }
    gui.end();
 

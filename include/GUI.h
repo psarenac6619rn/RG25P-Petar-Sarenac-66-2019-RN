@@ -15,6 +15,7 @@ public:
 
     void drawCrosshair();
     void drawText(const std::string& text, float x, float y, float scale, Vec3 color);
+    void drawRect(float x, float y, float w, float h, Vec3 color, float alpha = 1.0f);
 
 private:
     int W, H;
